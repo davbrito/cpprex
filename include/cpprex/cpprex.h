@@ -12,15 +12,12 @@ template <typename Reducer, typename State>
 class store {
  public:
   using state_type = State;
-
   using reducer_type = Reducer;
+
   using callback_type = std::function<void(const state_type&)>;
 
-  template <typename ReducerT>
-  store(ReducerT&&, const State&);
-
-  template <typename ReducerT>
-  store(ReducerT&&, State&&);
+  template <typename ReducerT, typename StateT>
+  store(ReducerT&&, StateT&&);
 
   template <typename ActionT>
   auto dispatch(ActionT&& a) -> std::enable_if_t<
@@ -45,25 +42,17 @@ class store {
 /* Deduction Guides */
 
 template <typename Reducer, typename State>
-store(Reducer&& reducer, const State& initial_state)
-    -> store<std::decay_t<std::remove_reference_t<Reducer>>, State>;
-
-template <typename Reducer, typename State>
 store(Reducer&& reducer, State&& initial_state)
-    -> store<std::decay_t<std::remove_reference_t<Reducer>>, State>;
+    -> store<std::decay_t<std::remove_reference_t<Reducer>>,
+             std::decay_t<std::remove_reference_t<State>>>;
 
 /* Constructors */
 
 template <typename R, typename S>
-template <typename Reducer>
-store<R, S>::store(Reducer&& reducer, const S& initial_state)
-    : m_reducer{std::forward<Reducer>(reducer)}, m_state{initial_state} {}
-
-template <typename R, typename S>
-template <typename Reducer>
-store<R, S>::store(Reducer&& reducer, S&& initial_state)
+template <typename Reducer, typename State>
+store<R, S>::store(Reducer&& reducer, State&& initial_state)
     : m_reducer{std::forward<Reducer>(reducer)},
-      m_state{std::move(initial_state)} {}
+      m_state{std::forward<State>(initial_state)} {}
 
 /* Destructor */
 
