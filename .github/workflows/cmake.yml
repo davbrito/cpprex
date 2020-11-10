@@ -1,6 +1,6 @@
 name: CMake
 
-on: [push]
+on: [push, pull_request]
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -12,43 +12,71 @@ jobs:
     # well on Windows or Mac.  You can convert this to a matrix build if you need
     # cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    env:
+      CONAN_USER_HOME: ${{ github.workspace }}/.conan
+      COVERAGE_PATH: ${{ github.workspace }}/coverage/lcov.info
+      BUILD_PATH: ${{ github.workspace }}/build
 
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - uses: actions/setup-python@v2
-      with:
-        python-version: '3.x' # Version range or exact version of a Python version to use, using SemVer's version range syntax
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
 
-    - name: Create Build Environment
-      # Some projects don't allow in-source building, so create a separate build directory
-      # We'll use this as our working directory for all subsequent commands
-      run: cmake -E make_directory ${{runner.workspace}}/build
+      - name: Install lcov
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y lcov
 
-    - name: Install conan
-      run: |
-        pip3 install conan
+      - name: Install conan
+        run: |
+          pip install conan
 
-    - name: Configure CMake
-      # Use a bash shell so we can use the same syntax for environment variable
-      # access regardless of the host operating system
-      shell: bash
-      working-directory: ${{runner.workspace}}/build
-      # Note the current convention is to use the -S and -B options here to specify source
-      # and build directories, but this is only available with CMake 3.13 and higher.
-      # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
-      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+      - name: Create Build Environment
+        # Some projects don't allow in-source building, so create a separate build directory
+        # We'll use this as our working directory for all subsequent commands
+        shell: bash
+        run: cmake -E make_directory $BUILD_PATH
 
-    - name: Build
-      working-directory: ${{runner.workspace}}/build
-      shell: bash
-      # Execute the build.  You can specify a specific target with "--target <NAME>"
-      run: cmake --build . --config $BUILD_TYPE
+      - name: Configure CMake
+        # Use a bash shell so we can use the same syntax for environment variable
+        # access regardless of the host operating system
+        shell: bash
+        run: cmake -S $GITHUB_WORKSPACE -B $BUILD_PATH -DCMAKE_BUILD_TYPE=$BUILD_TYPE
 
-    - name: Test
-      working-directory: ${{runner.workspace}}/build
-      shell: bash
-      # Execute tests defined by the CMake configuration.
-      # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: ctest -C $BUILD_TYPE
+      - name: Build
+        shell: bash
+        # Execute the build.  You can specify a specific target with "--target <NAME>"
+        run: cmake --build $BUILD_PATH --config $BUILD_TYPE
+
+      - name: Test
+        working-directory: ${{ env.BUILD_PATH }}
+        shell: bash
+        # Execute tests defined by the CMake configuration.
+        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+        run: ctest -C $BUILD_TYPE
+
+      - name: Coverage Report
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          TESTS_PATH: ${{ github.workspace }}/tests
+        shell: bash
+        run: |
+          mkdir ${{ github.workspace }}//coverage
+          lcov --capture --directory $BUILD_PATH --output-file $COVERAGE_PATH
+          lcov --remove $COVERAGE_PATH '/usr/*' --output-file $COVERAGE_PATH
+          lcov --remove $COVERAGE_PATH $TESTS_PATH/* --output-file $COVERAGE_PATH
+          lcov --remove $COVERAGE_PATH $CONAN_USER_HOME/* --output-file $COVERAGE_PATH
+          lcov --list $COVERAGE_PATH
+
+      - name: Coveralls GitHub Action
+        if: matrix.os == 'ubuntu-latest'
+        uses: coverallsapp/github-action@v1.1.2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path-to-lcov: ${{ env.COVERAGE_PATH }}
