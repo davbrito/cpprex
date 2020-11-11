@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+// Include <iostream> to prevent compilation error is MSVC
+#include <iostream>
 #include <string>
 #include <vector>
 
